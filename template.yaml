@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  solidcore-poc-events
+
+  Sample SAM Template for solidcore-poc-events
+Parameters:
+  Stage:
+    Type: String
+    Description: Stack suffix
+    Default: "dev"
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+    # You can add LoggingConfig parameters such as the Logformat, Log Group, and SystemLogLevel or ApplicationLogLevel. Learn more here https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html#sam-function-loggingconfig.
+    LoggingConfig:
+      LogFormat: JSON
+Resources:
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub "${AWS::StackName}-${Stage}-event-bus"
+
+  RestApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerTag: events-poc.latest
+      DockerContext: ./hello-world
+      Dockerfile: Dockerfile
+    Properties:
+      PackageType: Image
+      ImageUri: events-poc:latest
+      ImageConfig:
+        Command:
+          - "dist/app.httpHandler"
+      Architectures:
+      - x86_64
+      Events:
+        RestApi:
+          Type: Api
+          Properties:
+            Path: /hello
+            Method: get
+
+  EventHandlerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerTag: events-poc.latest
+      DockerContext: ./hello-world
+      Dockerfile: Dockerfile
+    Properties:
+      PackageType: Image
+      ImageUri: events-poc:latest
+      ImageConfig:
+        Command: 
+          - "dist/app.eventBridgeHandler"
+      Architectures:
+      - x86_64
+      Events:
+        EventBus:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref EventBus
+            Pattern:
+              source:
+                - prefix: solidcore.events.
+        Scheduler:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref EventBus
+            Pattern:
+              source:
+                - prefix: solidcore.cron.
+
+  SolidcoreScheduler:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub SolidcoreScheduler-${Stage}
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      FlexibleTimeWindow:
+        Mode: "FLEXIBLE"
+        MaximumWindowInMinutes: 1
+      Target:
+          Arn: !GetAtt EventBus.Arn
+          RoleArn: !GetAtt EventBridgeRole.Arn
+          EventBridgeParameters:
+            DetailType: "solidcore.cron.1minute"
+            Source: "solidcore.cron.1minute"
+
+
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name:
+        Fn::Sub: ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName:
+        Ref: ApplicationResourceGroup
+      AutoConfigurationEnabled: 'true'
+
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - events.amazonaws.com
+                - scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EventBridgeExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !GetAtt EventBus.Arn
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  RestApi:
+    Description: API Gateway endpoint URL for Prod stage for Rest API function
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
+  RestApiFunction:
+    Description: Rest API Lambda Function ARN
+    Value: !GetAtt RestApiFunction.Arn
+  RestApiFunctionIamRole:
+    Description: Implicit IAM Role created for Rest API function
+    Value: !GetAtt RestApiFunctionRole.Arn
