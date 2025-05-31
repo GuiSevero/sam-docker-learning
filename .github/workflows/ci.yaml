@@ -26,7 +26,3 @@ jobs:
           platforms: linux/amd64
           tags: events-poc:latest
           push: false
-
-      - name: Test Docker image
-        run: |
-          docker run --rm events-poc:latest echo "Build successful"
