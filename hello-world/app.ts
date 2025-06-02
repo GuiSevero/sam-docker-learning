@@ -25,7 +25,6 @@ export const httpHandler = async (
 ): Promise<APIGatewayProxyResult> => {
 
   console.log({ event_type: "httpHandler", event });
-  console.log({ event_type: "httpHandle2r", event });
 
   const response: APIGatewayProxyResult = {
     statusCode: 200,
