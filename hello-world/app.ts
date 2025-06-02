@@ -11,6 +11,7 @@ export const eventBridgeHandler = async (
   _context: Context
 ): Promise<void> => {
   console.log({ event_type: "event.received", event });
+  console.log("My New Feature - feat-1")
 
   if (event.source === 'solidcore.cron.1minute') {
     console.log('solidcore.cron.1minute');
